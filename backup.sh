@@ -35,26 +35,11 @@
 #        -u username -r server -p password -d ../../directoryFromRootByRelativePath
 #   Optional :
 #        -v (verbose)
-####################################################################################################################
-############################# File configuration ###################################################################
-####################################################################################################################
-filename="backup-$FTPS-$(date +%d.%m@%H.%M.%S)" #filename
-backupdir="/vagrant/backups/" #final destination for files in tar.gz
-tmpdir="/tmp/$filename" #temporary olcation for files
-#temporary files for crawling remote website
-tmplog="/tmp/wget-website-$REMOTEHOST-size"
-tmpremotesize="/tmp/remotesize"
-tmplocalsize="/tmp/localsize"
 
-cutdirs="2"
-logdir="/var/log/cron-backup" #log directory
-log="$logdir/log" #log file
-
-error=false
 ####################################################################################################################
 ############################# Check log availability ###############################################################
 ####################################################################################################################
-if [ ! -f "$log" ]; then
+if [ -f "$log" ]; then
 	echo "\n[$(date +%d.%m@%H.%M.%S)]Started backup\n" >>$log
 else
 	if [ ! -e $logdir ]; then
@@ -206,7 +191,22 @@ shift $((OPTIND-1))
 if [ -z "$REMOTEHOST" ] && [ -z "$PASSWORD" ] && [ -z "$DIRECTORY" ] && [ -z" $USER" ] ; then
     usage
 fi
+####################################################################################################################
+############################# Variable configuration ###############################################################
+####################################################################################################################
+filename="backup-$FTPS-$(date +%d.%m@%H.%M.%S)" #filename
+backupdir="/vagrant/backups/" #final destination for files in tar.gz
+tmpdir="/tmp/$filename" #temporary olcation for files
+#temporary files for crawling remote website
+tmplog="wget-website-$REMOTEHOST-size"
+tmpsize="size"
 
+
+cutdirs="2"
+logdir="/var/log/cron-backup" #log directory
+log="$logdir/log" #log file
+
+error=false
 ####################################################################################################################
 ############################# Check for errors before continuaing ##################################################
 ####################################################################################################################
@@ -235,17 +235,17 @@ cat $tmplog | \
 grep ^- | \
 sed s/\ /{space}/ | \
 awk '{sum+= $5}END{print sum*1.6;}' | \
-sed s/{space}/\ / > $tmpremotesize;
+sed s/{space}/\ / > $tmpsize;
 
 #Get local filestystem available bytes
 # http://stackoverflow.com/questions/19703621/get-free-disk-space-with-df-to-just-display-free-space-in-kb
 df -k $backupdir | \
 tail -1 | \
-awk '{print $4}' > $tmplocalsize;
+awk '{print $4}' >> $tmpsize;
 
-
-if [[ $(cat $tmplocalsize) -gt $(cat $tmpremotesize) ]]; then
-	echo "size available"
+exit 1;
+if ["$(cat $tmpsize > /dev/null)" < "$(cat $tmpsize > /dev/null)" ]; then
+	echo "size not available"
 fi
 
 
