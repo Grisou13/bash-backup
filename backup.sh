@@ -96,15 +96,15 @@ All long arguments must be used with '=' sign to asign a value, as such : --long
 OPTIONS:
 	-h --help      		Show this message
 	Required : 
-	   -u --user      		User name for connection
-	   -p --password     	Password for the user
-	   -r --remote-host 	Server address
-   	   -d --remote-dir     	Directory on the remote server to backup (must be relative)
+	   -u --user=STRING      	User name for connection
+	   -p --password=STRING     Password for the user
+	   -r --remote-host=ADDR    Server address
+   	   -d --remote-dir=DIR  	Directory on the remote server to backup (must be relative)
     Optional : 
-	   -b --backup-dir		Local directory to move archived folder
-	   -f --filename		Final filename for the backup filename.tar.gz
-	   -s --secure          Uses sftp instead of standard ftp
-	   --cut-dirs			Number of directories to cut wile downloading files (eg: ../../example = /example)
+	   -b --backup-dir=DIR		Local directory to move archived folder
+	   -f --filename=FILE		Final filename for the backup filename.tar.gz
+	   -s --secure          	Uses sftp instead of standard ftp
+	  --cut-dirs=NUMBER     	ignore NUMBER remote directory components, (for wget) default : 2 (eg: ../../example = /example with)
 
 "
 exit 1
@@ -220,7 +220,7 @@ fi
 ############################# Check remote site size ###############################################################
 ####################################################################################################################
  
-#List all files in remote directory recursively
+#List all files in remote directory recursively to a temporary file
 ftp -n $REMOTEHOST <<END_SCRIPT > ${tmplog} 2>&1
 quote USER $USER
 quote PASS $PASSWORD
@@ -243,9 +243,11 @@ df -k $backupdir | \
 tail -1 | \
 awk '{print $4}' >> $tmpsize;
 
-exit 1;
-if ["$(cat $tmpsize > /dev/null)" < "$(cat $tmpsize > /dev/null)" ]; then
+
+if ["$$(tail -n 1 $tmpsize)" < "$$(head -n 1 $tmpsize)" ]; then
 	echo "size not available"
+else
+	echo "Ok, lets start dl stuff"
 fi
 
 
@@ -259,7 +261,7 @@ if [ -z "$SECURE" ]; then
 else
 	$WGET -P $tmpdir -q -c -r -nH --no-parent --cut-dirs=$cutdirs -e robots=off --output-file="$log" ftp://$USER:$PASSWORD@$REMOTEHOST$DIRECTORY
 fi
-
+#check exit code of wget
 if [[ $? != 0 ]]; then
 	echo "[$(date +%d.%m@%H.%M.%S)] Failed to download exited with code : $?">>$log
 	exit 1;
@@ -268,7 +270,7 @@ fi
 ############################# Archive ##############################################################################
 ####################################################################################################################
 $TAR -vcf $backupdir/$filename.tar.gz $tmpdir
-
+#check exit code of tar
 if [[ $? != 0 ]]; then
 	echo "[$(date +%d.%m@%H.%M.%S)] Failed to compress exited with code : $?">>$log
 	exit 1;
@@ -276,4 +278,6 @@ fi
 ####################################################################################################################
 ############################# clear tmp files ######################################################################
 ####################################################################################################################
-$RM -rf $tmpdir
+$RM -rf $tmpdir > /dev/null 2>&1
+$RM -rf $tmpsize > /dev/null 2>&1
+$RM -rf $tmplog > /dev/null 2>&1
