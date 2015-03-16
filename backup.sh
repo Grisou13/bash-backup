@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # FTP updload script
 #
 # Version: 1.0
@@ -28,27 +28,77 @@
 #               wget
 #				tar
 #				rm
-#				getopt
+#				getopts
 #				sed
+#				scp
+#				ssh
+#				
 # Argument :
-# 	Required :
-#        -u username -r server -p password -d ../../directoryFromRootByRelativePath
-#   Optional :
-#        -v (verbose)
+#	-h --help      		Show this message
+#	Required : 
+#	   -u --user=STRING      	User name for connection
+#	   -p --password=STRING     Password for the user
+#	   -r --remote-host=ADDR    Server address
+#   	   -d --remote-dir=DIR  	Directory on the remote server to backup
+#   	   -b --backup-dir=DIR		Local directory to move archived folder
+#    Optional : 	   
+#	   -f --filename=FILE		Final filename for the backup filename.tar.gz
+#	   -s --secure          	Uses sftp instead of standard ftp
+#	   --port=STRING 			Port number for FTP/SFTP connection
+#	   --cut-dirs=NUMBER     	ignore NUMBER remote directory components, wget parameter, default : 2 (eg: ../../example = /example with)
+#
+#        
 
+set -e
+function cleanup {
+  	$RM -rf $tmpdir > /dev/null 2>&1
+	$RM -rf $tmpsize > /dev/null 2>&1
+	$RM -rf $tmplog > /dev/null 2>&1
+	if [[ -f $SSH_ASKPASS_SCRIPT ]]; then
+		$RM -rf $SSH_ASKPASS_SCRIPT > /dev/null 2>&1
+	fi
+}
+trap cleanup EXIT
+####################################################################################################################
+############################# Variable configuration ###############################################################
+####################################################################################################################
+
+filename= #filename
+tmpdir= #temporary olcation for files
+#temporary files for crawling remote website
+tmplog="list"
+tmpsize="size"
+logdir="/var/log/cron-backup" #log directory
+log="$logdir/log" #log file
+
+WGETOPTIONS="-c -r -nH --no-parent -e robots=off" #all basic wget options for download
+
+port=
+
+USER=
+PASSWORD=
+REMOTEHOST=
+DIRECTORY=
+SECURE=
+BACKUPDIR=
+error=
 ####################################################################################################################
 ############################# Check log availability ###############################################################
 ####################################################################################################################
+
+
 if [ -f "$log" ]; then
-	echo "\n[$(date +%d.%m@%H.%M.%S)]Started backup\n" >>$log
+	echo "">>$log
+	echo "">>$log
+	echo "[$(date +%d.%m@%H.%M.%S)]Started backup" >>$log
 else
 	if [ ! -e $logdir ]; then
 	    mkdir $logdir
 	elif [ ! -d $logdir ]; then
-	    echo "$logdir already exists but is not a directory\n" >> error-backup.txt
+	    echo "$logdir already exists but is not a directory" >> error-backup
 	    error=true
     else
-    	echo "Couldn't write to log file $log\n" >> error-backup.txt
+    	echo "Couldn't write to log file $log" >> error-backup
 	fi
 fi
 ####################################################################################################################
@@ -57,25 +107,24 @@ fi
 TAR=$(which tar)
 if [ -z "$TAR" ]; then
 	error=true
-    echo "[$(date +%d.%m@%H.%M.%S)] Error: tar not found exiting!\n" >>$log
+    echo "[$(date +%d.%m@%H.%M.%S)] Error: tar not found exiting!" >>$log
 fi
 
 WGET=$(which wget)
 if [ -z "$WGET" ]; then
 	error=true
-    echo "[$(date +%d.%m@%H.%M.%S)] Error: wget not found exiting!\n" >>$log
+    echo "[$(date +%d.%m@%H.%M.%S)] Error: wget not found exiting!" >>$log
 fi
 
 RM=$(which rm)
 if [ -z "$RM" ]; then
 	error=true
-    echo "[$(date +%d.%m@%H.%M.%S)] Error: rm not found!\n" >>$log
+    echo "[$(date +%d.%m@%H.%M.%S)] Error: rm not found!" >>$log
 fi
-
-GETOPT=$(which getopt)
-if [ -z "$GETOPT" ]; then
+SCP=$(which scp)
+if [ -z "$SCP" ]; then
 	error=true
-    echo "[$(date +%d.%m@%H.%M.%S)] Error: getopt not found!\n" >>$log
+    echo "[$(date +%d.%m@%H.%M.%S)] Error: scp not found!" >>$log
 fi
 
 ####################################################################################################################
@@ -99,22 +148,22 @@ OPTIONS:
 	   -u --user=STRING      	User name for connection
 	   -p --password=STRING     Password for the user
 	   -r --remote-host=ADDR    Server address
-   	   -d --remote-dir=DIR  	Directory on the remote server to backup (must be relative)
-    Optional : 
-	   -b --backup-dir=DIR		Local directory to move archived folder
+   	   -d --remote-dir=DIR  	Directory on the remote server to backup
+   	   -b --backup-dir=DIR		Local directory to move archived folder
+    Optional : 	   
 	   -f --filename=FILE		Final filename for the backup filename.tar.gz
 	   -s --secure          	Uses sftp instead of standard ftp
-	  --cut-dirs=NUMBER     	ignore NUMBER remote directory components, (for wget) default : 2 (eg: ../../example = /example with)
+	   --port=STRING 			Port number for FTP/SFTP connection
+	   --cut-dirs=NUMBER     	ignore NUMBER remote directory components, wget parameter, default : 2 (eg: ../../example = /example with)
 
+If you want to pass an absolute path to the remote directory, you have to add a '/' (eg: /dir/on/remote-server/to/backup/)
+The remote host directory can act like a wild card /dir/*.zip, since it uses wget.
+The filename of the .tar.gz backup is by default backup-HOST-DD.M@HH.MM.SS
 "
 exit 1
 }
 
-USER=
-PASSWORD=
-REMOTEHOST=
-DIRECTORY=
-SECURE=
+
 while getopts hfsu:p:r:-: arg; do
   case $arg in
   	h )
@@ -133,7 +182,7 @@ while getopts hfsu:p:r:-: arg; do
 		FILENAME="$OPTARG"
 	;;
 	b )
-		backupdir="$OPTARG"
+		BACKUPDIR="$OPTARG"
 	;;
 	s )
 		SECURE=true
@@ -157,7 +206,7 @@ while getopts hfsu:p:r:-: arg; do
 				DIRECTORY="$OPTARG"
 			;;
 			--backup-dir)
-				backupdir="$OPTARG"
+				BACKUPDIR="$OPTARG"
 			;;
 			--secure)
 				SECURE=true
@@ -167,6 +216,9 @@ while getopts hfsu:p:r:-: arg; do
 			;;
 			--cut-dirs)
 				cutdirs="$OPTARG"
+			;;
+			--port)
+				port="$OPTARG"
 			;;
 			--help)
 				usage
@@ -187,97 +239,191 @@ while getopts hfsu:p:r:-: arg; do
   esac
 done
 shift $((OPTIND-1))
-
-if [ -z "$REMOTEHOST" ] && [ -z "$PASSWORD" ] && [ -z "$DIRECTORY" ] && [ -z" $USER" ] ; then
+#check mandatory options
+if [ -z ${REMOTEHOST+x} ] && [ -z ${PASSWORD+x} ] && [ -z ${DIRECTORY+x} ] && [ -z ${USER+x} ] && [ -z ${BACKUPDIR+x} ] ; then
     usage
 fi
-####################################################################################################################
-############################# Variable configuration ###############################################################
-####################################################################################################################
-filename="backup-$FTPS-$(date +%d.%m@%H.%M.%S)" #filename
-backupdir="/vagrant/backups/" #final destination for files in tar.gz
+
+#####Re-assign some variables with arguments that were passed
+tmplog="list-$REMOTEHOST"
+filename="backup-$REMOTEHOST-$(date +%d.%m@%H.%M.%S)" #filename
 tmpdir="/tmp/$filename" #temporary olcation for files
-#temporary files for crawling remote website
-tmplog="wget-website-$REMOTEHOST-size"
-tmpsize="size"
-
-
-cutdirs="2"
-logdir="/var/log/cron-backup" #log directory
-log="$logdir/log" #log file
-
-error=false
+if [[ ! -z $cutdirs ]]; then
+	WGETOPTIONS="${WGETOPTIONS} --cut-dirs=$cutdirs"
+fi
+if [ ! -e $BACKUPDIR ]; then
+    mkdir $BACKUPDIR
+fi
 ####################################################################################################################
 ############################# Check for errors before continuaing ##################################################
 ####################################################################################################################
-
-if [ -z $error ]; then
-	echo "[$(date +%d.%m@%H.%M.%S)] Error: exiting....\n" >>$log && exit 1;
-else
-	echo "[$(date +%d.%m@%H.%M.%S)] Info: All dependencies found starting download\n" >>$log;
+if [ ${error} ] ; then
+	echo "[$(date +%d.%m@%H.%M.%S)] Error occured : exiting...." >>$log && exit 1;
 fi
 ####################################################################################################################
 ############################# Check remote site size ###############################################################
 ####################################################################################################################
- 
+echo "[$(date +%d.%m@%H.%M.%S)] Info: calculating remote folder size">>$log
+if [[ -z ${SECURE+x} ]]; then
 #List all files in remote directory recursively to a temporary file
-ftp -n $REMOTEHOST <<END_SCRIPT > ${tmplog} 2>&1
-quote USER $USER
-quote PASS $PASSWORD
+	if [ -z ${port+x} ] ; then
+		ftp -n $REMOTEHOST << END_SCRIPT > ${tmplog} 2>&1
+		quote USER $USER
+		quote PASS $PASSWORD
 
-cd $DIRECTORY
-ls -lR
+		cd $DIRECTORY
+		ls -lR
 
-quit
+		quit
 END_SCRIPT
-#Get remote directory size * 1.6
-cat $tmplog | \
-grep ^- | \
-sed s/\ /{space}/ | \
-awk '{sum+= $5}END{print sum*1.6;}' | \
-sed s/{space}/\ / > $tmpsize;
+	else
+		ftp -n $REMOTEHOST $port << END_SCRIPT > ${tmplog} 2>&1
+		quote USER $USER
+		quote PASS $PASSWORD
+
+		cd $DIRECTORY
+		ls -lR
+
+		quit
+END_SCRIPT
+
+	fi
+
+	if [[ $? != 0 ]] ; then
+		echo "[$(date +%d.%m@%H.%M.%S)] Error:  Failed to connect via FTP, exited with error code : $?">>$log
+		exit 1;
+	fi
+
+	#Get remote directory size * 1.6
+	cat $tmplog | \
+	grep ^- | \
+	sed s/\ /{space}/ | \
+	awk '{sum+= $5}END{print sum*1.6;}' | \
+	sed s/{space}/\ / > $tmpsize;
+
+
+else
+	#https://www.exratione.com/2014/08/bash-script-ssh-automation-without-a-password-prompt/
+	#----------------------------------------------------------------------
+	# Create a temp script to echo the SSH password, used by SSH_ASKPASS
+	#----------------------------------------------------------------------
+	 
+	SSH_ASKPASS_SCRIPT=/tmp/ssh-askpass-script
+	cat > ${SSH_ASKPASS_SCRIPT} <<EOL
+#!/bin/bash
+echo "${PASSWORD}"
+EOL
+	chmod u+x ${SSH_ASKPASS_SCRIPT}
+		# Set no display, necessary for ssh to play nice with setsid and SSH_ASKPASS.
+	export DISPLAY=:0
+	 
+	# Tell SSH to read in the output of the provided script as the password.
+	# We still have to use setsid to eliminate access to a terminal and thus avoid
+	# it ignoring this and asking for a password.
+	export SSH_ASKPASS=${SSH_ASKPASS_SCRIPT}
+	 
+	# LogLevel error is to suppress the hosts warning. The others are
+	# necessary if working with development servers with self-signed
+	# certificates.
+	SSH_OPTIONS="-oLogLevel=error"
+	SSH_OPTIONS="${SSH_OPTIONS} -oStrictHostKeyChecking=no"
+	SSH_OPTIONS="${SSH_OPTIONS} -oUserKnownHostsFile=/dev/null"
+	if [ -z ${port+x} ]; then
+		SSH_OPTIONS="${SSH_OPTIONS} -p ${port}"
+	fi
+	setsid ssh ${SSH_OPTIONS} ${USER}@${REMOTEHOST} "ls -lR $DIRECTORY" >> $tmplog
+	if [[ $? != 0 ]] ; then
+		echo "[$(date +%d.%m@%H.%M.%S)] Error:  Failed to connect via FTP, exited with error code : $?">>$log
+		exit 1;
+	fi
+
+	#Get remote directory size * 1.6
+	cat $tmplog | \
+	grep ^- | \
+	sed s/\ /{space}/ | \
+	awk '{sum+= $5}END{print sum*1.6;}' | \
+	sed s/{space}/\ / > $tmpsize;
+fi
+
+if [[ ! -f $tmpsize ]]; then
+	echo "[$(date +%d.%m@%H.%M.%S)] Error: temporary file for directory size wasn't created, cannot continue">>$log
+	exit 1;
+fi
 
 #Get local filestystem available bytes
 # http://stackoverflow.com/questions/19703621/get-free-disk-space-with-df-to-just-display-free-space-in-kb
-df -k $backupdir | \
+echo "[$(date +%d.%m@%H.%M.%S)] Info: calculating local folder size">>$log
+df $BACKUPDIR | \
 tail -1 | \
 awk '{print $4}' >> $tmpsize;
 
+#remote size is in 1st line of $tmpsize
+REMOTESIZE=$(head -n 1 $tmpsize | awk '{printf "%.0f",$1}')
+#local size is in 2nd/last line of file $tmpsize
+LOCALSIZE=$(tail -n 1 $tmpsize | awk '{printf "%.0f",$1}')
 
-if ["$$(tail -n 1 $tmpsize)" < "$$(head -n 1 $tmpsize)" ]; then
-	echo "size not available"
-else
-	echo "Ok, lets start dl stuff"
+if [ $REMOTESIZE -gt $LOCALSIZE ]; then
+	echo "[$(date +%d.%m@%H.%M.%S)] Error: size available on local disk is insufficient, exited with error code : $?">>$log
+	exit 1;
 fi
-
-
-exit 1;
 
 ####################################################################################################################
 ############################# Download files by ftp or sftp ########################################################
 ####################################################################################################################
-if [ -z "$SECURE" ]; then
-	$WGET -P $tmpdir -q -c -r -nH --no-parent --cut-dirs=$cutdirs -e robots=off --output-file="$log" sftp://$USER:$PASSWORD@$REMOTEHOST$DIRECTORY
+echo "[$(date +%d.%m@%H.%M.%S)] Info: started downloading files">>$log
+if [ ! -z ${SECURE} ]; then
+	#----------------------------------------------------------------------
+	# Create a temp script to echo the SSH password, used by SSH_ASKPASS
+	#----------------------------------------------------------------------
+	 
+	SSH_ASKPASS_SCRIPT=/tmp/ssh-askpass-script
+	cat > ${SSH_ASKPASS_SCRIPT} <<EOL
+#!/bin/bash
+echo "${PASSWORD}"
+EOL
+	chmod u+x ${SSH_ASKPASS_SCRIPT}
+		# Set no display, necessary for ssh to play nice with setsid and SSH_ASKPASS.
+	export DISPLAY=:0
+	 
+	# Tell SSH to read in the output of the provided script as the password.
+	# We still have to use setsid to eliminate access to a terminal and thus avoid
+	# it ignoring this and asking for a password.
+	export SSH_ASKPASS=${SSH_ASKPASS_SCRIPT}
+	 
+	# LogLevel error is to suppress the hosts warning. The others are
+	# necessary if working with development servers with self-signed
+	# certificates.
+	SSH_OPTIONS="-oLogLevel=error -r -C"
+	SSH_OPTIONS="${SSH_OPTIONS} -oStrictHostKeyChecking=no"
+	SSH_OPTIONS="${SSH_OPTIONS} -oUserKnownHostsFile=/dev/null"
+	if [ -z ${port+x} ]; then
+		SSH_OPTIONS="${SSH_OPTIONS} -P ${port}"
+	fi
+	setsid $SCP $SSH_OPTIONS $USER@$REMOTEHOST:$DIRECTORY $tmpdir >> $log 2>&1
 else
-	$WGET -P $tmpdir -q -c -r -nH --no-parent --cut-dirs=$cutdirs -e robots=off --output-file="$log" ftp://$USER:$PASSWORD@$REMOTEHOST$DIRECTORY
+	$WGET -P $tmpdir $WGETOPTIONS --output-file="$log" ftp://$USER:$PASSWORD@$REMOTEHOST/$DIRECTORY >> $log 2>&1
 fi
 #check exit code of wget
 if [[ $? != 0 ]]; then
-	echo "[$(date +%d.%m@%H.%M.%S)] Failed to download exited with code : $?">>$log
+	echo "[$(date +%d.%m@%H.%M.%S)] Error:  Failed to download exited with code : $?">>$log
 	exit 1;
 fi
 ####################################################################################################################
 ############################# Archive ##############################################################################
 ####################################################################################################################
-$TAR -vcf $backupdir/$filename.tar.gz $tmpdir
+#http://www.dslreports.com/forum/r23739041-Bash-Script-path-correcting
+echo "[$(date +%d.%m@%H.%M.%S)] Info: started archiving">>$log
+LEN=${#BACKUPDIR}-1
+ 
+if [ "${BACKUPDIR:LEN}" != "/" ]; then
+  BACKUPDIR=$BACKUPDIR"/"
+fi
+$TAR -vcf $BACKUPDIR$filename.tar.gz $tmpdir >> $log 2>&1
 #check exit code of tar
 if [[ $? != 0 ]]; then
-	echo "[$(date +%d.%m@%H.%M.%S)] Failed to compress exited with code : $?">>$log
+	echo "[$(date +%d.%m@%H.%M.%S)] Error: Failed to compress exited with code : $?">>$log
 	exit 1;
 fi
 ####################################################################################################################
-############################# clear tmp files ######################################################################
-####################################################################################################################
-$RM -rf $tmpdir > /dev/null 2>&1
-$RM -rf $tmpsize > /dev/null 2>&1
-$RM -rf $tmplog > /dev/null 2>&1
+
+exit 0;
