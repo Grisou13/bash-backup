@@ -30,7 +30,7 @@
 #				rm
 #				getopts
 #				sed
-#				scp
+#				rsync
 #				ssh
 #				
 # Argument :
@@ -39,9 +39,10 @@
 #	   -u --user=STRING      	User name for connection
 #	   -p --password=STRING     Password for the user
 #	   -r --remote-host=ADDR    Server address
-#   	   -d --remote-dir=DIR  	Directory on the remote server to backup
-#   	   -b --backup-dir=DIR		Local directory to move archived folder
-#    Optional : 	   
+#      -d --remote-dir=DIR  	Directory on the remote server to backup
+#   	   
+#    Optional :
+#	   -b --backup-dir=DIR		Local directory to move archived folder
 #	   -f --filename=FILE		Final filename for the backup filename.tar.gz
 #	   -s --secure          	Uses sftp instead of standard ftp
 #	   --port=STRING 			Port number for FTP/SFTP connection
@@ -51,12 +52,15 @@
 
 set -e
 function cleanup {
-  	$RM -rf $tmpdir > /dev/null 2>&1
-	$RM -rf $tmpsize > /dev/null 2>&1
-	$RM -rf $tmplog > /dev/null 2>&1
-	if [[ -f $SSH_ASKPASS_SCRIPT ]]; then
-		$RM -rf $SSH_ASKPASS_SCRIPT > /dev/null 2>&1
+	if [[ -z $debug ]]; then
+		$RM -rf $tmpdir > /dev/null 2>&1
+		$RM -rf $tmpsize > /dev/null 2>&1
+		$RM -rf $tmplog > /dev/null 2>&1
+		if [[ -f $SSH_ASKPASS_SCRIPT ]]; then
+			$RM -rf $SSH_ASKPASS_SCRIPT > /dev/null 2>&1
+		fi
 	fi
+  	
 }
 trap cleanup EXIT
 ####################################################################################################################
@@ -71,16 +75,16 @@ tmpsize="size"
 logdir="/var/log/cron-backup" #log directory
 log="$logdir/log" #log file
 
-WGETOPTIONS="-c -r -nH --no-parent -e robots=off" #all basic wget options for download
-
 port=
+cutdirs=0
 
 USER=
 PASSWORD=
 REMOTEHOST=
-DIRECTORY=
+RDIRECTORY=
 SECURE=
-BACKUPDIR=
+BACKUPDIR=$(pwd)
+
 error=
 ####################################################################################################################
 ############################# Check log availability ###############################################################
@@ -123,12 +127,16 @@ if [ -z "$RM" ]; then
 fi
 SCP=$(which scp)
 if [ -z "$SCP" ]; then
-	error=true
-    echo "[$(date +%d.%m@%H.%M.%S)] Error: scp not found!" >>$log
+error=true
+echo "[$(date +%d.%m@%H.%M.%S)] Error: scp not found!" >>$log
 fi
-
+SSH=$(which ssh)
+if [ -z "$SSH" ]; then
+	error=true
+    echo "[$(date +%d.%m@%H.%M.%S)] Error: ssh not found!" >>$log
+fi
 ####################################################################################################################
-############################# Argument treatement ##################################################################
+############################# Argument parsing #####################################################################
 ####################################################################################################################
 #Help function for usage of this script
 
@@ -155,16 +163,20 @@ OPTIONS:
 	   -s --secure          	Uses sftp instead of standard ftp
 	   --port=STRING 			Port number for FTP/SFTP connection
 	   --cut-dirs=NUMBER     	ignore NUMBER remote directory components, wget parameter, default : 2 (eg: ../../example = /example with)
+	   --no-zip					doesn't zip the downloaded directory and instead moves it direcly in the backup directory
 
 If you want to pass an absolute path to the remote directory, you have to add a '/' (eg: /dir/on/remote-server/to/backup/)
-The remote host directory can act like a wild card /dir/*.zip, since it uses wget.
-The filename of the .tar.gz backup is by default backup-HOST-DD.M@HH.MM.SS
+The remote host directory can act like a wild card /dir/*.zip, since it uses wget or scp.
+The filename of the local backup .tar.gz is by default backup-HOST-DD.M@HH.MM.SS
+The remote folder is recursivly backed up
+The default backup directory will be the current working directory
 "
 exit 1
 }
+#required arguments must be seperated by a ':'
+#Optional arguments must be at first and not seperated
 
-
-while getopts hfsu:p:r:-: arg; do
+while getopts hfbsu:p:r:-: arg; do
   case $arg in
   	h )
 		usage
@@ -203,7 +215,7 @@ while getopts hfsu:p:r:-: arg; do
 				PASSWORD="$OPTARG"
 			;;
 			--remote-dir)
-				DIRECTORY="$OPTARG"
+				RDIRECTORY="$OPTARG"
 			;;
 			--backup-dir)
 				BACKUPDIR="$OPTARG"
@@ -219,6 +231,12 @@ while getopts hfsu:p:r:-: arg; do
 			;;
 			--port)
 				port="$OPTARG"
+			;;
+			--debug)
+				debug=true
+			;;
+			--no-zip)
+				nozip=true
 			;;
 			--help)
 				usage
@@ -240,19 +258,36 @@ while getopts hfsu:p:r:-: arg; do
 done
 shift $((OPTIND-1))
 #check mandatory options
-if [ -z ${REMOTEHOST+x} ] && [ -z ${PASSWORD+x} ] && [ -z ${DIRECTORY+x} ] && [ -z ${USER+x} ] && [ -z ${BACKUPDIR+x} ] ; then
+if [ -z ${REMOTEHOST+x} ] && [ -z ${PASSWORD+x} ] && [ -z ${RDIRECTORY+x} ] && [ -z ${USER+x} ] ; then
     usage
 fi
 
 #####Re-assign some variables with arguments that were passed
 tmplog="list-$REMOTEHOST"
-filename="backup-$REMOTEHOST-$(date +%d.%m@%H.%M.%S)" #filename
+if [ -z ${filename} ]; then
+	filename="backup-$REMOTEHOST-$(date +%d.%m@%H.%M.%S)" #filename
+fi
 tmpdir="/tmp/$filename" #temporary olcation for files
-if [[ ! -z $cutdirs ]]; then
+mkdir $tmpdir > /dev/null 2>&1
+
+if [[ ! -z ${cutdirs+x} ]]; then
 	WGETOPTIONS="${WGETOPTIONS} --cut-dirs=$cutdirs"
 fi
+if [ ! -z ${SECURE} ] && [ -z ${port} ] ; then
+	port="22"
+elif [ -z ${port} ]; then
+	port="21"
+fi
+
+#http://www.dslreports.com/forum/r23739041-Bash-Script-path-correcting
+LEN=${#BACKUPDIR}-1
+ 
+if [ "${BACKUPDIR:LEN}" != "/" ]; then
+  BACKUPDIR=$BACKUPDIR"/"
+fi
+#create the backup directory if it doesnt exist
 if [ ! -e $BACKUPDIR ]; then
-    mkdir $BACKUPDIR
+    mkdir $BACKUPDIR > /dev/null 2>&1
 fi
 ####################################################################################################################
 ############################# Check for errors before continuaing ##################################################
@@ -260,170 +295,157 @@ fi
 if [ ${error} ] ; then
 	echo "[$(date +%d.%m@%H.%M.%S)] Error occured : exiting...." >>$log && exit 1;
 fi
-####################################################################################################################
-############################# Check remote site size ###############################################################
-####################################################################################################################
-echo "[$(date +%d.%m@%H.%M.%S)] Info: calculating remote folder size">>$log
-if [[ -z ${SECURE+x} ]]; then
-#List all files in remote directory recursively to a temporary file
-	if [ -z ${port+x} ] ; then
-		ftp -n $REMOTEHOST << END_SCRIPT > ${tmplog} 2>&1
-		quote USER $USER
-		quote PASS $PASSWORD
+IFS=","
+#$(echo $RDIRECTORY | sed -e 's/, /, /g')
+for DIRECTORY in $RDIRECTORY; do
+	echo "[$(date +%d.%m@%H.%M.%S)] Info:  Retrieving $DIRECTORY">>$log
 
-		cd $DIRECTORY
-		ls -lR
+	####################################################################################################################
+	############################# Check remote site size ###############################################################
+	####################################################################################################################
+	echo "[$(date +%d.%m@%H.%M.%S)] Info: calculating remote folder size">>$log
+	if [ ! ${SECURE} ]; then
+	#List all files in remote directory recursively to a temporary file
+			ftp -n $REMOTEHOST $port << END_SCRIPT > ${tmplog} 2>&1
+			quote USER $USER
+			quote PASS $PASSWORD
 
-		quit
+			cd $DIRECTORY
+			ls -lR
+
+			quit
 END_SCRIPT
+
+
+		if [[ $? != 0 ]] ; then
+			echo "[$(date +%d.%m@%H.%M.%S)] Error:  Failed to connect via FTP, exited with error code : $?">>$log
+			exit 1;
+		fi
+
+		#Get remote directory size * 1.6
+		cat $tmplog | \
+		grep ^- | \
+		sed s/\ /{space}/ | \
+		awk '{sum+= $5}END{print sum*1.6;}' | \
+		sed s/{space}/\ / > $tmpsize;
+
 	else
-		ftp -n $REMOTEHOST $port << END_SCRIPT > ${tmplog} 2>&1
-		quote USER $USER
-		quote PASS $PASSWORD
+		#https://www.exratione.com/2014/08/bash-script-ssh-automation-without-a-password-prompt/
+		#----------------------------------------------------------------------
+		# Create a temp script to echo the SSH password, used by SSH_ASKPASS
+		#----------------------------------------------------------------------
+		 
+		SSH_ASKPASS_SCRIPT=/tmp/ssh-askpass-script
+		cat > ${SSH_ASKPASS_SCRIPT} <<EOL
+	#!/bin/bash
+	echo "${PASSWORD}"
+EOL
+		chmod u+x ${SSH_ASKPASS_SCRIPT}
+			# Set no display, necessary for ssh to play nice with setsid and SSH_ASKPASS.
+		export DISPLAY=:0
+		 
+		# Tell SSH to read in the output of the provided script as the password.
+		# We still have to use setsid to eliminate access to a terminal and thus avoid
+		# it ignoring this and asking for a password.
+		export SSH_ASKPASS=${SSH_ASKPASS_SCRIPT}
+		 
+		# LogLevel error is to suppress the hosts warning. The others are
+		# necessary if working with development servers with self-signed
+		# certificates.
+		setsid ssh -oLogLevel=error -oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null -p ${port} ${USER}@${REMOTEHOST} "ls -lR $DIRECTORY" >> $tmplog
+		if [[ $? != 0 ]] ; then
+			echo "[$(date +%d.%m@%H.%M.%S)] Error:  Failed to connect via FTP, exited with error code : $?">>$log
+			exit 1;
+		fi
 
-		cd $DIRECTORY
-		ls -lR
-
-		quit
-END_SCRIPT
-
+		#Get remote directory size * 1.6
+		cat $tmplog | \
+		grep ^- | \
+		sed s/\ /{space}/ | \
+		awk '{sum+= $5}END{print sum*1.6;}' | \
+		sed s/{space}/\ / > $tmpsize;
 	fi
 
-	if [[ $? != 0 ]] ; then
-		echo "[$(date +%d.%m@%H.%M.%S)] Error:  Failed to connect via FTP, exited with error code : $?">>$log
+	if [[ ! -f $tmpsize ]]; then
+		echo "[$(date +%d.%m@%H.%M.%S)] Error: temporary file for directory size wasn't created, cannot continue">>$log
 		exit 1;
 	fi
 
-	#Get remote directory size * 1.6
-	cat $tmplog | \
-	grep ^- | \
-	sed s/\ /{space}/ | \
-	awk '{sum+= $5}END{print sum*1.6;}' | \
-	sed s/{space}/\ / > $tmpsize;
+	#Get local filestystem available bytes
+	# http://stackoverflow.com/questions/19703621/get-free-disk-space-with-df-to-just-display-free-space-in-kb
+	echo "[$(date +%d.%m@%H.%M.%S)] Info: calculating local folder size">>$log
+	df $BACKUPDIR | \
+	tail -1 | \
+	awk '{print $4}' >> $tmpsize;
 
+	#remote size is in 1st line of $tmpsize
+	REMOTESIZE=$(head -n 1 $tmpsize | awk '{printf "%.0f",$1}')
+	#local size is in 2nd/last line of file $tmpsize
+	LOCALSIZE=$(tail -n 1 $tmpsize | awk '{printf "%.0f",$1}')
 
-else
-	#https://www.exratione.com/2014/08/bash-script-ssh-automation-without-a-password-prompt/
-	#----------------------------------------------------------------------
-	# Create a temp script to echo the SSH password, used by SSH_ASKPASS
-	#----------------------------------------------------------------------
-	 
-	SSH_ASKPASS_SCRIPT=/tmp/ssh-askpass-script
-	cat > ${SSH_ASKPASS_SCRIPT} <<EOL
-#!/bin/bash
-echo "${PASSWORD}"
-EOL
-	chmod u+x ${SSH_ASKPASS_SCRIPT}
-		# Set no display, necessary for ssh to play nice with setsid and SSH_ASKPASS.
-	export DISPLAY=:0
-	 
-	# Tell SSH to read in the output of the provided script as the password.
-	# We still have to use setsid to eliminate access to a terminal and thus avoid
-	# it ignoring this and asking for a password.
-	export SSH_ASKPASS=${SSH_ASKPASS_SCRIPT}
-	 
-	# LogLevel error is to suppress the hosts warning. The others are
-	# necessary if working with development servers with self-signed
-	# certificates.
-	SSH_OPTIONS="-oLogLevel=error"
-	SSH_OPTIONS="${SSH_OPTIONS} -oStrictHostKeyChecking=no"
-	SSH_OPTIONS="${SSH_OPTIONS} -oUserKnownHostsFile=/dev/null"
-	if [ -z ${port+x} ]; then
-		SSH_OPTIONS="${SSH_OPTIONS} -p ${port}"
-	fi
-	setsid ssh ${SSH_OPTIONS} ${USER}@${REMOTEHOST} "ls -lR $DIRECTORY" >> $tmplog
-	if [[ $? != 0 ]] ; then
-		echo "[$(date +%d.%m@%H.%M.%S)] Error:  Failed to connect via FTP, exited with error code : $?">>$log
+	if [ $REMOTESIZE -gt $LOCALSIZE ]; then
+		echo "[$(date +%d.%m@%H.%M.%S)] Error: size available on local disk is insufficient, exited with error code : $?">>$log
 		exit 1;
 	fi
 
-	#Get remote directory size * 1.6
-	cat $tmplog | \
-	grep ^- | \
-	sed s/\ /{space}/ | \
-	awk '{sum+= $5}END{print sum*1.6;}' | \
-	sed s/{space}/\ / > $tmpsize;
-fi
-
-if [[ ! -f $tmpsize ]]; then
-	echo "[$(date +%d.%m@%H.%M.%S)] Error: temporary file for directory size wasn't created, cannot continue">>$log
-	exit 1;
-fi
-
-#Get local filestystem available bytes
-# http://stackoverflow.com/questions/19703621/get-free-disk-space-with-df-to-just-display-free-space-in-kb
-echo "[$(date +%d.%m@%H.%M.%S)] Info: calculating local folder size">>$log
-df $BACKUPDIR | \
-tail -1 | \
-awk '{print $4}' >> $tmpsize;
-
-#remote size is in 1st line of $tmpsize
-REMOTESIZE=$(head -n 1 $tmpsize | awk '{printf "%.0f",$1}')
-#local size is in 2nd/last line of file $tmpsize
-LOCALSIZE=$(tail -n 1 $tmpsize | awk '{printf "%.0f",$1}')
-
-if [ $REMOTESIZE -gt $LOCALSIZE ]; then
-	echo "[$(date +%d.%m@%H.%M.%S)] Error: size available on local disk is insufficient, exited with error code : $?">>$log
-	exit 1;
-fi
-
-####################################################################################################################
-############################# Download files by ftp or sftp ########################################################
-####################################################################################################################
-echo "[$(date +%d.%m@%H.%M.%S)] Info: started downloading files">>$log
-if [ ! -z ${SECURE} ]; then
-	#----------------------------------------------------------------------
-	# Create a temp script to echo the SSH password, used by SSH_ASKPASS
-	#----------------------------------------------------------------------
-	 
-	SSH_ASKPASS_SCRIPT=/tmp/ssh-askpass-script
-	cat > ${SSH_ASKPASS_SCRIPT} <<EOL
-#!/bin/bash
-echo "${PASSWORD}"
+	####################################################################################################################
+	############################# Download files by ftp or sftp ########################################################
+	####################################################################################################################
+	echo "[$(date +%d.%m@%H.%M.%S)] Info: started downloading files">>$log
+	if [ ! -z ${SECURE} ]; then
+		#----------------------------------------------------------------------
+		# Create a temp script to echo the SSH password, used by SSH_ASKPASS
+		#----------------------------------------------------------------------
+		 
+		SSH_ASKPASS_SCRIPT=/tmp/ssh-askpass-script
+		cat > ${SSH_ASKPASS_SCRIPT} <<EOL
+	#!/bin/bash
+	echo "${PASSWORD}"
 EOL
-	chmod u+x ${SSH_ASKPASS_SCRIPT}
-		# Set no display, necessary for ssh to play nice with setsid and SSH_ASKPASS.
-	export DISPLAY=:0
-	 
-	# Tell SSH to read in the output of the provided script as the password.
-	# We still have to use setsid to eliminate access to a terminal and thus avoid
-	# it ignoring this and asking for a password.
-	export SSH_ASKPASS=${SSH_ASKPASS_SCRIPT}
-	 
-	# LogLevel error is to suppress the hosts warning. The others are
-	# necessary if working with development servers with self-signed
-	# certificates.
-	SSH_OPTIONS="-oLogLevel=error -r -C"
-	SSH_OPTIONS="${SSH_OPTIONS} -oStrictHostKeyChecking=no"
-	SSH_OPTIONS="${SSH_OPTIONS} -oUserKnownHostsFile=/dev/null"
-	if [ -z ${port+x} ]; then
-		SSH_OPTIONS="${SSH_OPTIONS} -P ${port}"
+		chmod u+x ${SSH_ASKPASS_SCRIPT}
+			# Set no display, necessary for ssh to play nice with setsid and SSH_ASKPASS.
+		export DISPLAY=:0
+		 
+		# Tell SSH to read in the output of the provided script as the password.
+		# We still have to use setsid to eliminate access to a terminal and thus avoid
+		# it ignoring this and asking for a password.
+		export SSH_ASKPASS=${SSH_ASKPASS_SCRIPT}
+		 
+		# LogLevel error is to suppress the hosts warning. The others are
+		# necessary if working with development servers with self-signed
+		# certificates.
+		SSH_OPTIONS="-oLogLevel=error -r -C -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no"
+		c="setsid $SCP $SSH_OPTIONS -P ${port} -pv $USER@$REMOTEHOST:$DIRECTORY $tmpdir >> $log 2>&1"
+		echo "[$(date +%d.%m@%H.%M.%S)] Info: downloading command = $c">>$log
+		setsid $SCP -oLogLevel=error -r -C -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no -P ${port} -pv $USER@$REMOTEHOST:$DIRECTORY $tmpdir >> $log 2>&1
+	else
+		echo "[$(date +%d.%m@%H.%M.%S)] Info: downloading command = wget -vr -nc -nH -x -np -P $tmpdir --cut-dirs=$cutdirs ftp://$USER:$PASSWORD@$REMOTEHOST/$DIRECTORY">>$log
+		$WGET -vr -nc -nH -x -np -P $tmpdir --cut-dirs=$cutdirs ftp://$USER:$PASSWORD@$REMOTEHOST/$DIRECTORY >> $log 2>&1
 	fi
-	setsid $SCP $SSH_OPTIONS $USER@$REMOTEHOST:$DIRECTORY $tmpdir >> $log 2>&1
-else
-	$WGET -P $tmpdir $WGETOPTIONS --output-file="$log" ftp://$USER:$PASSWORD@$REMOTEHOST/$DIRECTORY >> $log 2>&1
-fi
-#check exit code of wget
-if [[ $? != 0 ]]; then
-	echo "[$(date +%d.%m@%H.%M.%S)] Error:  Failed to download exited with code : $?">>$log
-	exit 1;
-fi
-####################################################################################################################
-############################# Archive ##############################################################################
-####################################################################################################################
-#http://www.dslreports.com/forum/r23739041-Bash-Script-path-correcting
-echo "[$(date +%d.%m@%H.%M.%S)] Info: started archiving">>$log
-LEN=${#BACKUPDIR}-1
- 
-if [ "${BACKUPDIR:LEN}" != "/" ]; then
-  BACKUPDIR=$BACKUPDIR"/"
-fi
-$TAR -vcf $BACKUPDIR$filename.tar.gz $tmpdir >> $log 2>&1
-#check exit code of tar
-if [[ $? != 0 ]]; then
-	echo "[$(date +%d.%m@%H.%M.%S)] Error: Failed to compress exited with code : $?">>$log
-	exit 1;
-fi
-####################################################################################################################
+	#check exit code of wget
+	if [[ $? != 0 ]]; then
+		echo "[$(date +%d.%m@%H.%M.%S)] Error:  Failed to download exited with code : $?">>$log
+		exit 1;
+	fi
 
+done
+####################################################################################################################
+############################# Archive ##############file:///C:/Users/tricci/Downloads/mysqltopostgres-0.2.15.gem################################################################
+####################################################################################################################
+if [ ! -z ${nozip} ]; then
+	#no archiving moving files instead
+	mv -vfn $tmpdir/* $BACKUPDIR$filename
+else
+	#archiving
+	echo "[$(date +%d.%m@%H.%M.%S)] Info: started archiving">>$log
+	$TAR -vcf $BACKUPDIR$filename.tar.gz $tmpdir >> $log 2>&1
+	#check exit code of tar
+	if [[ $? != 0 ]]; then
+		echo "[$(date +%d.%m@%H.%M.%S)] Error: Failed to compress exited with code : $?">>$log
+		exit 1;
+	fi
+fi
+
+####################################################################################################################
+echo "[$(date +%d.%m@%H.%M.%S)] Info: finishing and cleaning up.....">>$log
 exit 0;
