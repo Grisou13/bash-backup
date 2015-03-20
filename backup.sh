@@ -25,12 +25,12 @@
 #		SOFTWARE.
 #
 # Dependencies : 
+#				ftp
 #               wget
 #				tar
 #				rm
 #				getopts
 #				sed
-#				rsync
 #				ssh
 #				
 # Argument :
@@ -60,7 +60,6 @@ function cleanup {
 			$RM -rf $SSH_ASKPASS_SCRIPT > /dev/null 2>&1
 		fi
 	fi
-  	
 }
 trap cleanup EXIT
 ####################################################################################################################
@@ -72,8 +71,8 @@ tmpdir= #temporary olcation for files
 #temporary files for crawling remote website
 tmplog="list"
 tmpsize="size"
-logdir="/var/log/cron-backup" #log directory
-log="$logdir/log" #log file
+logdir="/var/log" #log directory
+log="$logdir/$0.log" #log file
 
 port=
 cutdirs=0
@@ -93,7 +92,8 @@ error=
 
 if [ -f "$log" ]; then
 	echo "">>$log
-	echo "">>$log
+	echo "####################################################################################################################">>$log
+	echo "####################################################################################################################">>$log
 	echo "[$(date +%d.%m@%H.%M.%S)]Started backup" >>$log
 else
 	if [ ! -e $logdir ]; then
@@ -108,6 +108,11 @@ fi
 ####################################################################################################################
 ############################# Check dependencies ###################################################################
 ####################################################################################################################
+FTP=$(which ftp)
+if [ -z "$FTP" ]; then
+	error=true
+    echo "[$(date +%d.%m@%H.%M.%S)] Error: ftp not found exiting!" >>$log
+fi
 TAR=$(which tar)
 if [ -z "$TAR" ]; then
 	error=true
@@ -306,7 +311,7 @@ for DIRECTORY in $RDIRECTORY; do
 	echo "[$(date +%d.%m@%H.%M.%S)] Info: calculating remote folder size">>$log
 	if [ ! ${SECURE} ]; then
 	#List all files in remote directory recursively to a temporary file
-			ftp -n $REMOTEHOST $port << END_SCRIPT > ${tmplog} 2>&1
+			$FTP -n $REMOTEHOST $port << END_SCRIPT > ${tmplog} 2>&1
 			quote USER $USER
 			quote PASS $PASSWORD
 
@@ -374,12 +379,12 @@ EOL
 	#Get local filestystem available bytes
 	# http://stackoverflow.com/questions/19703621/get-free-disk-space-with-df-to-just-display-free-space-in-kb
 	echo "[$(date +%d.%m@%H.%M.%S)] Info: calculating local folder size">>$log
-	df $BACKUPDIR | \
+	df -k $BACKUPDIR | \
 	tail -1 | \
 	awk '{print $4}' >> $tmpsize;
 
 	#remote size is in 1st line of $tmpsize
-	REMOTESIZE=$(head -n 1 $tmpsize | awk '{printf "%.0f",$1}')
+	REMOTESIZE=$(head -n 1 $tmpsize | awk '{printf "%.0f",$1/1024}')
 	#local size is in 2nd/last line of file $tmpsize
 	LOCALSIZE=$(tail -n 1 $tmpsize | awk '{printf "%.0f",$1}')
 
@@ -430,11 +435,11 @@ EOL
 
 done
 ####################################################################################################################
-############################# Archive ##############file:///C:/Users/tricci/Downloads/mysqltopostgres-0.2.15.gem################################################################
+############################# Archive ##############################################################################
 ####################################################################################################################
 if [ ! -z ${nozip} ]; then
 	#no archiving moving files instead
-	mv -vfn $tmpdir/* $BACKUPDIR$filename
+	mv -vfn $tmpdir $BACKUPDIR
 else
 	#archiving
 	echo "[$(date +%d.%m@%H.%M.%S)] Info: started archiving">>$log
