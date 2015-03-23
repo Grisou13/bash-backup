@@ -32,6 +32,7 @@
 #				getopts
 #				sed
 #				ssh
+#				mkdir
 #				
 # Argument :
 #	-h --help      		Show this message
