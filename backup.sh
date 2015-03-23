@@ -39,15 +39,14 @@
 #	   -u --user=STRING      	User name for connection
 #	   -p --password=STRING     Password for the user
 #	   -r --remote-host=ADDR    Server address
-#      -d --remote-dir=DIR  	Directory on the remote server to backup
-#   	   
-#    Optional :
-#	   -b --backup-dir=DIR		Local directory to move archived folder
+#      -d --remote-dir=DIR  	Directory on the remote server to backup  	   
+#    Optional :	   
+#      -b --backup-dir=DIR		Local directory to move archived folder
 #	   -f --filename=FILE		Final filename for the backup filename.tar.gz
 #	   -s --secure          	Uses sftp instead of standard ftp
 #	   --port=STRING 			Port number for FTP/SFTP connection
 #	   --cut-dirs=NUMBER     	ignore NUMBER remote directory components, wget parameter, default : 2 (eg: ../../example = /example with)
-#
+#	   --no-zip					doesn't zip the downloaded directory and instead moves it direcly in the backup directory
 #        
 
 set -e
@@ -72,7 +71,7 @@ tmpdir= #temporary olcation for files
 tmplog="list"
 tmpsize="size"
 logdir="/var/log" #log directory
-log="$logdir/$0.log" #log file
+log="$logdir/$(basename $0).log" #log file
 
 port=
 cutdirs=0
@@ -140,6 +139,11 @@ if [ -z "$SSH" ]; then
 	error=true
     echo "[$(date +%d.%m@%H.%M.%S)] Error: ssh not found!" >>$log
 fi
+BZIP=$(which bzip2)
+if [ -z "$BZIP" ]; then
+	error=true
+    echo "[$(date +%d.%m@%H.%M.%S)] Error: bzip2 not found!" >>$log
+fi
 ####################################################################################################################
 ############################# Argument parsing #####################################################################
 ####################################################################################################################
@@ -151,9 +155,9 @@ echo <"
 
 usage: $0 options
 
-This script will run a backup of any remote site with an ftp/sftp connection
+This script will run a backup of any remote site with an ftp/sftp connection, and backup recursivly a directory
 
-All long arguments must be used with '=' sign to asign a value, as such : --long-arg=value
+All long arguments that require a value must be used with '=' sign to asign a value, as such : --long-arg=value
 
 OPTIONS:
 	-h --help      		Show this message
@@ -162,21 +166,23 @@ OPTIONS:
 	   -p --password=STRING     Password for the user
 	   -r --remote-host=ADDR    Server address
    	   -d --remote-dir=DIR  	Directory on the remote server to backup
-   	   -b --backup-dir=DIR		Local directory to move archived folder
+   	   
     Optional : 	   
-	   -f --filename=FILE		Final filename for the backup filename.tar.gz
+       -b --backup-dir=DIR		Local directory to move archived folder, if not specified it will be the current working directory
+	   -f --filename=FILE		Final filename for the backup filename.tar.bz2
 	   -s --secure          	Uses sftp instead of standard ftp
 	   --port=STRING 			Port number for FTP/SFTP connection
-	   --cut-dirs=NUMBER     	ignore NUMBER remote directory components, wget parameter, default : 2 (eg: ../../example = /example with)
+	   --cut-dirs=NUMBER     	ignore NUMBER remote directory components, see WGET --cut-dirs , default : 0 (eg: ../../example = /example with)
 	   --no-zip					doesn't zip the downloaded directory and instead moves it direcly in the backup directory
 
-If you want to pass an absolute path to the remote directory, you have to add a '/' (eg: /dir/on/remote-server/to/backup/)
+
+The remote path can be passed either relativly, or absolutly, just keep in mind that when it is relative it must be from the entry point of the connection.
 The remote host directory can act like a wild card /dir/*.zip, since it uses wget or scp.
-The filename of the local backup .tar.gz is by default backup-HOST-DD.M@HH.MM.SS
-The remote folder is recursivly backed up
-The default backup directory will be the current working directory
+The filename of the local backup .tar.bz2 is by default backup-HOST-YYYY.m.d.HH.MM.SS
+
+This script will exit with 0 if everything was OK, 1 if an error was encountered, and 2 if an argument is not valid
 "
-exit 1
+exit 2; #exit with 1 since an argument was invalid
 }
 #required arguments must be seperated by a ':'
 #Optional arguments must be at first and not seperated
@@ -270,7 +276,7 @@ fi
 #####Re-assign some variables with arguments that were passed
 tmplog="list-$REMOTEHOST"
 if [ -z ${filename} ]; then
-	filename="backup-$REMOTEHOST-$(date +%d.%m@%H.%M.%S)" #filename
+	filename="backup-$REMOTEHOST-$(date +%Y%m%d%H%M%S)" #filename
 fi
 tmpdir="/tmp/$filename" #temporary olcation for files
 mkdir $tmpdir > /dev/null 2>&1
@@ -298,17 +304,17 @@ fi
 ############################# Check for errors before continuaing ##################################################
 ####################################################################################################################
 if [ ${error} ] ; then
-	echo "[$(date +%d.%m@%H.%M.%S)] Error occured : exiting...." >>$log && exit 1;
+	echo "[$(date +%Y%m%d%H%M%S)] Error occured : exiting...." >>$log && exit 1;
 fi
 IFS=","
 #$(echo $RDIRECTORY | sed -e 's/, /, /g')
 for DIRECTORY in $RDIRECTORY; do
-	echo "[$(date +%d.%m@%H.%M.%S)] Info:  Retrieving $DIRECTORY">>$log
+	echo "[$(date +%Y%m%d%H%M%S)] Info:  Retrieving $DIRECTORY">>$log
 
 	####################################################################################################################
 	############################# Check remote site size ###############################################################
 	####################################################################################################################
-	echo "[$(date +%d.%m@%H.%M.%S)] Info: calculating remote folder size">>$log
+	echo "[$(date +%Y%m%d%H%M%S)] Info: calculating remote folder size">>$log
 	if [ ! ${SECURE} ]; then
 	#List all files in remote directory recursively to a temporary file
 			$FTP -n $REMOTEHOST $port << END_SCRIPT > ${tmplog} 2>&1
@@ -323,7 +329,7 @@ END_SCRIPT
 
 
 		if [[ $? != 0 ]] ; then
-			echo "[$(date +%d.%m@%H.%M.%S)] Error:  Failed to connect via FTP, exited with error code : $?">>$log
+			echo "[$(date +%Y%m%d%H%M%S)] Error:  Failed to connect via FTP, exited with error code : $?">>$log
 			exit 1;
 		fi
 
@@ -359,7 +365,7 @@ EOL
 		# certificates.
 		setsid ssh -oLogLevel=error -oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null -p ${port} ${USER}@${REMOTEHOST} "ls -lR $DIRECTORY" >> $tmplog
 		if [[ $? != 0 ]] ; then
-			echo "[$(date +%d.%m@%H.%M.%S)] Error:  Failed to connect via FTP, exited with error code : $?">>$log
+			echo "[$(date +%Y%m%d%H%M%S)] Error:  Failed to connect via FTP, exited with error code : $?">>$log
 			exit 1;
 		fi
 
@@ -372,15 +378,16 @@ EOL
 	fi
 
 	if [[ ! -f $tmpsize ]]; then
-		echo "[$(date +%d.%m@%H.%M.%S)] Error: temporary file for directory size wasn't created, cannot continue">>$log
+		echo "[$(date +%Y%m%d%H%M%S)] Error: temporary file for directory size wasn't created, cannot continue">>$log
 		exit 1;
 	fi
 
 	#Get local filestystem available bytes
 	# http://stackoverflow.com/questions/19703621/get-free-disk-space-with-df-to-just-display-free-space-in-kb
-	echo "[$(date +%d.%m@%H.%M.%S)] Info: calculating local folder size">>$log
+	echo "[$(date +%Y%m%d%H%M%S)] Info: calculating local folder size">>$log
 	df -k $BACKUPDIR | \
-	tail -1 | \
+	grep -v 'Use%' |\
+	tr -d '\n' |\
 	awk '{print $4}' >> $tmpsize;
 
 	#remote size is in 1st line of $tmpsize
@@ -389,14 +396,14 @@ EOL
 	LOCALSIZE=$(tail -n 1 $tmpsize | awk '{printf "%.0f",$1}')
 
 	if [ $REMOTESIZE -gt $LOCALSIZE ]; then
-		echo "[$(date +%d.%m@%H.%M.%S)] Error: size available on local disk is insufficient, exited with error code : $?">>$log
+		echo "[$(date +%Y%m%d%H%M%S)] Error: size available on local disk is insufficient, exited with error code : $?">>$log
 		exit 1;
 	fi
 
 	####################################################################################################################
 	############################# Download files by ftp or sftp ########################################################
 	####################################################################################################################
-	echo "[$(date +%d.%m@%H.%M.%S)] Info: started downloading files">>$log
+	echo "[$(date +%Y%m%d%H%M%S)] Info: started downloading files">>$log
 	if [ ! -z ${SECURE} ]; then
 		#----------------------------------------------------------------------
 		# Create a temp script to echo the SSH password, used by SSH_ASKPASS
@@ -421,15 +428,15 @@ EOL
 		# certificates.
 		SSH_OPTIONS="-oLogLevel=error -r -C -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no"
 		c="setsid $SCP $SSH_OPTIONS -P ${port} -pv $USER@$REMOTEHOST:$DIRECTORY $tmpdir >> $log 2>&1"
-		echo "[$(date +%d.%m@%H.%M.%S)] Info: downloading command = $c">>$log
+		echo "[$(date +%Y%m%d%H%M%S)] Info: downloading command = $c">>$log
 		setsid $SCP -oLogLevel=error -r -C -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no -P ${port} -pv $USER@$REMOTEHOST:$DIRECTORY $tmpdir >> $log 2>&1
 	else
-		echo "[$(date +%d.%m@%H.%M.%S)] Info: downloading command = wget -vr -nc -nH -x -np -P $tmpdir --cut-dirs=$cutdirs ftp://$USER:$PASSWORD@$REMOTEHOST/$DIRECTORY">>$log
+		echo "[$(date +%Y%m%d%H%M%S)] Info: downloading command = wget -vr -nc -nH -x -np -P $tmpdir --cut-dirs=$cutdirs ftp://$USER:$PASSWORD@$REMOTEHOST/$DIRECTORY">>$log
 		$WGET -vr -nc -nH -x -np -P $tmpdir --cut-dirs=$cutdirs ftp://$USER:$PASSWORD@$REMOTEHOST/$DIRECTORY >> $log 2>&1
 	fi
 	#check exit code of wget
 	if [[ $? != 0 ]]; then
-		echo "[$(date +%d.%m@%H.%M.%S)] Error:  Failed to download exited with code : $?">>$log
+		echo "[$(date +%Y%m%d%H%M%S)] Error:  Failed to download exited with code : $?">>$log
 		exit 1;
 	fi
 
@@ -442,15 +449,16 @@ if [ ! -z ${nozip} ]; then
 	mv -vfn $tmpdir $BACKUPDIR
 else
 	#archiving
-	echo "[$(date +%d.%m@%H.%M.%S)] Info: started archiving">>$log
-	$TAR -vcf $BACKUPDIR$filename.tar.gz $tmpdir >> $log 2>&1
+	echo "[$(date +%Y%m%d%H%M%S)] Info: started archiving">>$log
+	$TAR -vcf $BACKUPDIR$filename.tar $tmpdir >> $log 2>&1
+	$BZIP -9v $BACKUPDIR$filename.tar >> $log 2>&1
 	#check exit code of tar
 	if [[ $? != 0 ]]; then
-		echo "[$(date +%d.%m@%H.%M.%S)] Error: Failed to compress exited with code : $?">>$log
+		echo "[$(date +%Y%m%d%H%M%S)] Error: Failed to compress exited with code : $?">>$log
 		exit 1;
 	fi
 fi
 
 ####################################################################################################################
-echo "[$(date +%d.%m@%H.%M.%S)] Info: finishing and cleaning up.....">>$log
+echo "[$(date +%Y%m%d%H%M%S)] Info: finishing and cleaning up.....">>$log
 exit 0;
