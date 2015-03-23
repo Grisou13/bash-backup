@@ -5,9 +5,11 @@ It uses normal Ubuntu components to work, and was tested on RedHat
 
 Dependencies
 ===================================
-All these dependencies maybe installed on your distro, unless your a dinausor comming from unix 1.0.
+All these dependencies maybe already installed on your distro, unless your a dinausor comming from unix 1.0.
+
 The dependencies are mainly listed because the user running this script may be restricted, so make sure it can access all these commands.
-This script uses bash *getopts* for argument parsing, please make sure that your distro supports it.
+This script uses bash *getopts* for argument parsing, please make sure that your distro, and bash version supports it.
+
 * *ftp*
 * *wget*
 * *tar*
@@ -24,6 +26,9 @@ This script uses bash *getopts* for argument parsing, please make sure that your
 * *mv*
 * *setsid*
 * *chmod*
+* *cat*
+* *head*
+* *tail*
 
 Usage
 ====================================
@@ -46,6 +51,13 @@ With multiple remote directories : `./backup.sh -u username -p pwd -r mysite.com
 With secure : `./backup.sh -u username -p pwd -r mysite.com -d /var/www/html -b /var/backups/ --secure`, this would backup the remote directory recursivly with SCP, and put it in the specified directory.
 
 Every action is loged and put in the directory `/var/log/script-name.log`.
+
+If the log file wasn't accessible, the script will create in the current working directory a file called *error-backup*
+
+The script will leave with status code:
+* **0** if everything was OK
+* **1** if there was an error, in which case check the logs
+* **2** if there was an error parsing arguments (argument missing, or something)
 
 If you want to use this script without getting in the directory or anything, simply do a `mv backup.sh /usr/local/bin/name-of-script` (you may require sudo to move it there), then let it executable with `sudo chmod +x /usr/local/bin/name-of-script`.
 
@@ -73,3 +85,10 @@ For help just call `backup.sh -h`
 |        | --port=STRING 		| Port number for FTP/SFTP connection                                                                       |
 | -s     | --secure          	| Uses sftp instead of standard ftp                                                                         |
 
+Errors & Debug
+=================================
+Errors that may accure is when specifing a complex password, oyu may need to put it in simple quotes '', other wise bash tries to interprete it as an argument.
+
+If there was an error during the backup process please check the logs, or if you want debug information, run the script with `/bin/bash +x /path/to/backup-script`, this will give you all debug information needed
+
+There is a argument that you can specify which is `--debug`, and this will leave all temporary files.

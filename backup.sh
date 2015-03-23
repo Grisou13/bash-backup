@@ -25,14 +25,25 @@
 #		SOFTWARE.
 #
 # Dependencies : 
-#				ftp
-#               wget
-#				tar
-#				rm
-#				getopts
-#				sed
-#				ssh
-#				mkdir
+# 		*ftp*
+# 		*wget*
+# 		*tar*
+# 		*rm*
+# 		*getopts*
+# 		*sed*
+# 		*ssh*
+# 		*awk*
+# 		*mkdir*
+# 		*grep*
+# 		*cat*
+# 		*df*
+# 		*tr*
+# 		*mv*
+# 		*setsid*
+# 		*chmod*
+# 		*cat*
+# 		*head*
+# 		*tail*
 #				
 # Argument :
 #	-h --help      		Show this message
@@ -50,7 +61,7 @@
 #	   --no-zip					doesn't zip the downloaded directory and instead moves it direcly in the backup directory
 #        
 
-set -e
+set -e #enable errors
 function cleanup {
 	if [[ -z $debug ]]; then
 		$RM -rf $tmpdir > /dev/null 2>&1
@@ -61,7 +72,7 @@ function cleanup {
 		fi
 	fi
 }
-trap cleanup EXIT
+trap cleanup EXIT #on every exit cleanup tmp files
 ####################################################################################################################
 ############################# Variable configuration ###############################################################
 ####################################################################################################################
@@ -88,7 +99,6 @@ error=
 ####################################################################################################################
 ############################# Check log availability ###############################################################
 ####################################################################################################################
-
 
 if [ -f "$log" ]; then
 	echo "">>$log
@@ -144,6 +154,56 @@ BZIP=$(which bzip2)
 if [ -z "$BZIP" ]; then
 	error=true
     echo "[$(date +%d.%m@%H.%M.%S)] Error: bzip2 not found!" >>$log
+fi
+MV=$(which mv)
+if [ -z "$MV" ]; then
+	error=true
+    echo "[$(date +%d.%m@%H.%M.%S)] Error: mv not found!" >>$log
+fi
+SETSID=$(which setsid)
+if [ -z "$SETSID" ]; then
+	error=true
+    echo "[$(date +%d.%m@%H.%M.%S)] Error: setsid not found!" >>$log
+fi
+TR=$(which tr)
+if [ -z "$TR" ]; then
+	error=true
+    echo "[$(date +%d.%m@%H.%M.%S)] Error: tr not found!" >>$log
+fi
+AWK=$(which awk)
+if [ -z "$AWK" ]; then
+	error=true
+    echo "[$(date +%d.%m@%H.%M.%S)] Error: awk not found!" >>$log
+fi
+GREP=$(which grep)
+if [ -z "$GREP" ]; then
+	error=true
+    echo "[$(date +%d.%m@%H.%M.%S)] Error: grep not found!" >>$log
+fi
+CAT=$(which cat)
+if [ -z "$CAT" ]; then
+	error=true
+    echo "[$(date +%d.%m@%H.%M.%S)] Error: cat not found!" >>$log
+fi
+DF=$(which df)
+if [ -z "$DF" ]; then
+	error=true
+    echo "[$(date +%d.%m@%H.%M.%S)] Error: df not found!" >>$log
+fi
+CHMOD=$(which chmod)
+if [ -z "$CHMOD" ]; then
+	error=true
+    echo "[$(date +%d.%m@%H.%M.%S)] Error: chmod not found!" >>$log
+fi
+HEAD=$(which head)
+if [ -z "$HEAD" ]; then
+	error=true
+    echo "[$(date +%d.%m@%H.%M.%S)] Error: head not found!" >>$log
+fi
+TAIL=$(which tail)
+if [ -z "$TAIL" ]; then
+	error=true
+    echo "[$(date +%d.%m@%H.%M.%S)] Error: tail not found!" >>$log
 fi
 ####################################################################################################################
 ############################# Argument parsing #####################################################################
@@ -335,10 +395,10 @@ END_SCRIPT
 		fi
 
 		#Get remote directory size * 1.6
-		cat $tmplog | \
-		grep ^- | \
+		$CAT $tmplog | \
+		$GREP ^- | \
 		sed s/\ /{space}/ | \
-		awk '{sum+= $5}END{print sum*1.6;}' | \
+		$AWK '{sum+= $5}END{print sum*1.6;}' | \
 		sed s/{space}/\ / > $tmpsize;
 
 	else
@@ -348,11 +408,11 @@ END_SCRIPT
 		#----------------------------------------------------------------------
 		 
 		SSH_ASKPASS_SCRIPT=/tmp/ssh-askpass-script
-		cat > ${SSH_ASKPASS_SCRIPT} <<EOL
+		$CAT > ${SSH_ASKPASS_SCRIPT} <<EOL
 	#!/bin/bash
 	echo "${PASSWORD}"
 EOL
-		chmod u+x ${SSH_ASKPASS_SCRIPT}
+		$CHMOD u+x ${SSH_ASKPASS_SCRIPT}
 			# Set no display, necessary for ssh to play nice with setsid and SSH_ASKPASS.
 		export DISPLAY=:0
 		 
@@ -364,17 +424,17 @@ EOL
 		# LogLevel error is to suppress the hosts warning. The others are
 		# necessary if working with development servers with self-signed
 		# certificates.
-		setsid ssh -oLogLevel=error -oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null -p ${port} ${USER}@${REMOTEHOST} "ls -lR $DIRECTORY" >> $tmplog
+		$SETSID $SSH -oLogLevel=error -oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null -p ${port} ${USER}@${REMOTEHOST} "ls -lR $DIRECTORY" >> $tmplog
 		if [[ $? != 0 ]] ; then
 			echo "[$(date +%Y%m%d%H%M%S)] Error:  Failed to connect via FTP, exited with error code : $?">>$log
 			exit 1;
 		fi
 
 		#Get remote directory size * 1.6
-		cat $tmplog | \
-		grep ^- | \
+		$CAT $tmplog | \
+		$GREP ^- | \
 		sed s/\ /{space}/ | \
-		awk '{sum+= $5}END{print sum*1.6;}' | \
+		$AWK '{sum+= $5}END{print sum*1.6;}' | \
 		sed s/{space}/\ / > $tmpsize;
 	fi
 
@@ -386,15 +446,15 @@ EOL
 	#Get local filestystem available bytes
 	# http://stackoverflow.com/questions/19703621/get-free-disk-space-with-df-to-just-display-free-space-in-kb
 	echo "[$(date +%Y%m%d%H%M%S)] Info: calculating local folder size">>$log
-	df -k $BACKUPDIR | \
-	grep -v 'Use%' |\
-	tr -d '\n' |\
-	awk '{print $4}' >> $tmpsize;
+	$DF -k $BACKUPDIR | \
+	$GREP -v 'Use%' |\
+	$TR -d '\n' |\
+	$AWK '{print $4}' >> $tmpsize;
 
 	#remote size is in 1st line of $tmpsize
-	REMOTESIZE=$(head -n 1 $tmpsize | awk '{printf "%.0f",$1/1024}')
+	REMOTESIZE=$($HEAD -n 1 $tmpsize | $AWK '{printf "%.0f",$1/1024}')
 	#local size is in 2nd/last line of file $tmpsize
-	LOCALSIZE=$(tail -n 1 $tmpsize | awk '{printf "%.0f",$1}')
+	LOCALSIZE=$($TAIL -n 1 $tmpsize | $AWK '{printf "%.0f",$1}')
 
 	if [ $REMOTESIZE -gt $LOCALSIZE ]; then
 		echo "[$(date +%Y%m%d%H%M%S)] Error: size available on local disk is insufficient, exited with error code : $?">>$log
@@ -415,7 +475,7 @@ EOL
 	#!/bin/bash
 	echo "${PASSWORD}"
 EOL
-		chmod u+x ${SSH_ASKPASS_SCRIPT}
+		$CHMOD u+x ${SSH_ASKPASS_SCRIPT}
 			# Set no display, necessary for ssh to play nice with setsid and SSH_ASKPASS.
 		export DISPLAY=:0
 		 
@@ -427,12 +487,11 @@ EOL
 		# LogLevel error is to suppress the hosts warning. The others are
 		# necessary if working with development servers with self-signed
 		# certificates.
-		SSH_OPTIONS="-oLogLevel=error -r -C -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no"
-		c="setsid $SCP $SSH_OPTIONS -P ${port} -pv $USER@$REMOTEHOST:$DIRECTORY $tmpdir >> $log 2>&1"
+		c="$SCP -oLogLevel=error -r -C -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no -P ${port} -pv $USER@$REMOTEHOST:$DIRECTORY $tmpdir"
 		echo "[$(date +%Y%m%d%H%M%S)] Info: downloading command = $c">>$log
-		setsid $SCP -oLogLevel=error -r -C -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no -P ${port} -pv $USER@$REMOTEHOST:$DIRECTORY $tmpdir >> $log 2>&1
+		$SETSID $SCP -oLogLevel=error -r -C -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no -P ${port} -pv $USER@$REMOTEHOST:$DIRECTORY $tmpdir >> $log 2>&1
 	else
-		echo "[$(date +%Y%m%d%H%M%S)] Info: downloading command = wget -vr -nc -nH -x -np -P $tmpdir --cut-dirs=$cutdirs ftp://$USER:$PASSWORD@$REMOTEHOST/$DIRECTORY">>$log
+		echo "[$(date +%Y%m%d%H%M%S)] Info: downloading command = $WGET -vr -nc -nH -x -np -P $tmpdir --cut-dirs=$cutdirs ftp://$USER:$PASSWORD@$REMOTEHOST/$DIRECTORY">>$log
 		$WGET -vr -nc -nH -x -np -P $tmpdir --cut-dirs=$cutdirs ftp://$USER:$PASSWORD@$REMOTEHOST/$DIRECTORY >> $log 2>&1
 	fi
 	#check exit code of wget
@@ -447,7 +506,7 @@ done
 ####################################################################################################################
 if [ ! -z ${nozip} ]; then
 	#no archiving moving files instead
-	mv -vfn $tmpdir $BACKUPDIR
+	$MV -vfn $tmpdir $BACKUPDIR
 else
 	#archiving
 	echo "[$(date +%Y%m%d%H%M%S)] Info: started archiving">>$log
