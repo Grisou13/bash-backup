@@ -46,7 +46,7 @@ For help just call `backup.sh -h`
 
 ###Required arguments
 
-| Description                                                              |
+|        |                      |Description                               |
 |--------|----------------------|------------------------------------------|
 | -u     | --user=STRING        | User name for connection                 |
 | -p     | --password=STRING    | Password for the user                    |
@@ -55,7 +55,7 @@ For help just call `backup.sh -h`
 
 ###Optional Arguments
 
-| Description                                                                                                                               |
+|        |                      | Description                                                                                               |
 |--------|----------------------|-----------------------------------------------------------------------------------------------------------|
 |        | --no-zip             | Doesn't bzip the downloaded directory and instead moves it direcly in the backup directory                |
 | -b     | --backup-dir=DIR     | Local directory to move remote dowloaded folder                                                           |
