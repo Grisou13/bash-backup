@@ -1,9 +1,11 @@
 # bash-backup
-A backup utility for Linux machines using only ftp connection. It uses normal Ubuntu components to work.
+A backup utility for Linux machines using only ftp connection.
+
+It uses normal Ubuntu components to work, and was tested on RedHat
 
 Dependencies
 ===================================
-All these dependencies maybe installed on your distro, unless your a dinausor.
+All these dependencies maybe installed on your distro, unless your a dinausor comming from unix 1.0.
 The dependencies are mainly listed because the user running this script may be restricted, so make sure it can access all these commands.
 This script uses bash *getopts* for argument parsing, please make sure that your distro supports it.
 * *ftp*
@@ -36,6 +38,8 @@ All backups that are **not** specified with --no-zip, will get bziped.
 basic usage would be : `./backup.sh -u username -p pwd -r mysite.com -d /var/www/html`, this would backup the remote directory recursivly and put it in the current working directory.
 
 With a backup directory : `./backup.sh -u username -p pwd -r mysite.com -d /var/www/html -b /var/backups/`, this would backup the remote directory recursivly with WGET, and put it in the specified directory.
+
+You can specify multiple remote directory to backup, which can be usefull if you need logs, and backup some data.
 
 With multiple remote directories : `./backup.sh -u username -p pwd -r mysite.com -d /var/www/html,/var/logs/ -b /var/backups/`, this would backup all the remote directory recursivly with WGET, and put it in the specified directory, in 1 archive.
 
