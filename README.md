@@ -35,7 +35,9 @@ All backups created by this script are named as **backup-HOST-YYYY.m.d.HH.MM.SS*
 All backups that are **not** specified with --no-zip, will get bziped.
 
 basic usage would be : `backup.sh -u username -p pwd -r mysite.com -d /var/www/html`, this would backup the remote directory recursivly and put it in the current working directory.
+
 With a backup directory : `backup.sh -u username -p pwd -r mysite.com -d /var/www/html -b /var/backups/`, this would backup the remote directory recursivly with WGET, and put it in the specified directory.
+
 With secure : `backup.sh -u username -p pwd -r mysite.com -d /var/www/html -b /var/backups/ --secure`, this would backup the remote directory recursivly with SCP, and put it in the specified directory.
 
 
