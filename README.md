@@ -23,7 +23,6 @@ This script uses bash *getopts* for argument parsing, please make sure that your
 * *setsid*
 * *chmod*
 
-
 Usage
 ====================================
 Before using this script make sure that you have all the dependencies.
@@ -34,21 +33,25 @@ All backups created by this script are named as **backup-HOST-YYYY.m.d.HH.MM.SS*
 
 All backups that are **not** specified with --no-zip, will get bziped.
 
-basic usage would be : `backup.sh -u username -p pwd -r mysite.com -d /var/www/html`, this would backup the remote directory recursivly and put it in the current working directory.
+basic usage would be : `./backup.sh -u username -p pwd -r mysite.com -d /var/www/html`, this would backup the remote directory recursivly and put it in the current working directory.
 
-With a backup directory : `backup.sh -u username -p pwd -r mysite.com -d /var/www/html -b /var/backups/`, this would backup the remote directory recursivly with WGET, and put it in the specified directory.
+With a backup directory : `./backup.sh -u username -p pwd -r mysite.com -d /var/www/html -b /var/backups/`, this would backup the remote directory recursivly with WGET, and put it in the specified directory.
 
-With secure : `backup.sh -u username -p pwd -r mysite.com -d /var/www/html -b /var/backups/ --secure`, this would backup the remote directory recursivly with SCP, and put it in the specified directory.
+With multiple remote directories : `./backup.sh -u username -p pwd -r mysite.com -d /var/www/html,/var/logs/ -b /var/backups/`, this would backup all the remote directory recursivly with WGET, and put it in the specified directory, in 1 archive.
 
+With secure : `./backup.sh -u username -p pwd -r mysite.com -d /var/www/html -b /var/backups/ --secure`, this would backup the remote directory recursivly with SCP, and put it in the specified directory.
+
+Every action is loged and put in the directory `/var/log/script-name.log`.
+
+If you want to use this script without getting in the directory or anything, simply do a `mv backup.sh /usr/local/bin/name-of-script` (you may require sudo to move it there), then let it executable with `sudo chmod +x /usr/local/bin/name-of-script`.
 
 Arguments
 ===================================
-
 For help just call `backup.sh -h`
 
 ###Required arguments
 
-|        |                      |Description                               |
+|        |                      | Description                              |
 |--------|----------------------|------------------------------------------|
 | -u     | --user=STRING        | User name for connection                 |
 | -p     | --password=STRING    | Password for the user                    |
