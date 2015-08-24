@@ -63,7 +63,7 @@ If you want to use this script without getting in the directory or anything, sim
 
 Arguments
 ===================================
-For help just call `backup.sh -h`
+For help just call `backup.sh -h` or `backup.sh --help`
 
 ###Required arguments
 

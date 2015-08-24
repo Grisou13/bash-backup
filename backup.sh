@@ -60,30 +60,38 @@
 #	   --cut-dirs=NUMBER     	ignore NUMBER remote directory components, wget parameter, default : 2 (eg: ../../example = /example with)
 #	   --no-zip					doesn't zip the downloaded directory and instead moves it direcly in the backup directory
 #        
-
+GetDate(){
+	echo $(date +%Y-%m-%d-%H:%M:%S)
+}
 set -e #enable errors
-function cleanup {
-	if [[ -z $debug ]]; then
+cleanup() {
+	if [ -f $log ] && [ -w $log ]; then
+		echo "[$(GetDate)] Info: exited with status : $?">>$log
+	fi
+	if [ -z $debug ]; then
 		$RM -rf $tmpdir > /dev/null 2>&1
 		$RM -rf $tmpsize > /dev/null 2>&1
 		$RM -rf $tmplog > /dev/null 2>&1
-		if [[ -f $SSH_ASKPASS_SCRIPT ]]; then
+		if [ -f $SSH_ASKPASS_SCRIPT ]; then
 			$RM -rf $SSH_ASKPASS_SCRIPT > /dev/null 2>&1
 		fi
 	fi
 }
 trap cleanup EXIT #on every exit cleanup tmp files
+
+
+
 ####################################################################################################################
 ############################# Variable configuration ###############################################################
 ####################################################################################################################
-
+pretend=
 filename= #filename
 tmpdir= #temporary olcation for files
 #temporary files for crawling remote website
 tmplog="list"
 tmpsize="size"
-logdir="/var/log" #log directory
-log="$logdir/$(basename $0).log" #log file
+logdir="/var/log/$(basename $0|cut -d"." -f1)" #log directory
+log="$logdir/$(basename $0|cut -d"." -f1).log" #log file
 
 port=
 cutdirs=0
@@ -100,15 +108,16 @@ error=
 ############################# Check log availability ###############################################################
 ####################################################################################################################
 
-if [ -f "$log" ]; then
-	echo "">>$log
-	echo "####################################################################################################################">>$log
-	echo "####################################################################################################################">>$log
-	echo "[$(date +%d.%m@%H.%M.%S)]Started backup" >>$log
+if [ -f $log ] && [ -w $log ]; then
+	#rotated=$log-$(date %Y%m%d)
+	#if[ -f $rotated]; then
+	#cp $log $log-$(date %Y%m%d)
+	echo "\n">>$log
+	echo "[$(GetDate)]Started backup" >>$log
 else
-	if [ ! -e $logdir ]; then
-	    mkdir $logdir
-	elif [ ! -d $logdir ]; then
+	if [ ! -d $logdir ]; then
+	    mkdir --parents $logdir
+	elif [ ! -e $logdir ]; then
 	    echo "$logdir already exists but is not a directory" >> error-backup
 	    error=true
     else
@@ -121,89 +130,89 @@ fi
 FTP=$(which ftp)
 if [ -z "$FTP" ]; then
 	error=true
-    echo "[$(date +%d.%m@%H.%M.%S)] Error: ftp not found exiting!" >>$log
+    echo "[$(GetDate)] Error: ftp not found exiting!" >>$log
 fi
 TAR=$(which tar)
 if [ -z "$TAR" ]; then
 	error=true
-    echo "[$(date +%d.%m@%H.%M.%S)] Error: tar not found exiting!" >>$log
+    echo "[$(GetDate)] Error: tar not found exiting!" >>$log
 fi
 
 WGET=$(which wget)
 if [ -z "$WGET" ]; then
 	error=true
-    echo "[$(date +%d.%m@%H.%M.%S)] Error: wget not found exiting!" >>$log
+    echo "[$(GetDate)] Error: wget not found exiting!" >>$log
 fi
 
 RM=$(which rm)
 if [ -z "$RM" ]; then
 	error=true
-    echo "[$(date +%d.%m@%H.%M.%S)] Error: rm not found!" >>$log
+    echo "[$(GetDate)] Error: rm not found!" >>$log
 fi
 SCP=$(which scp)
 if [ -z "$SCP" ]; then
 error=true
-echo "[$(date +%d.%m@%H.%M.%S)] Error: scp not found!" >>$log
+echo "[$(GetDate)] Error: scp not found!" >>$log
 fi
 SSH=$(which ssh)
 if [ -z "$SSH" ]; then
 	error=true
-    echo "[$(date +%d.%m@%H.%M.%S)] Error: ssh not found!" >>$log
+    echo "[$(GetDate)] Error: ssh not found!" >>$log
 fi
 BZIP=$(which bzip2)
 if [ -z "$BZIP" ]; then
 	error=true
-    echo "[$(date +%d.%m@%H.%M.%S)] Error: bzip2 not found!" >>$log
+    echo "[$(GetDate)] Error: bzip2 not found!" >>$log
 fi
 MV=$(which mv)
 if [ -z "$MV" ]; then
 	error=true
-    echo "[$(date +%d.%m@%H.%M.%S)] Error: mv not found!" >>$log
+    echo "[$(GetDate)] Error: mv not found!" >>$log
 fi
 SETSID=$(which setsid)
 if [ -z "$SETSID" ]; then
 	error=true
-    echo "[$(date +%d.%m@%H.%M.%S)] Error: setsid not found!" >>$log
+    echo "[$(GetDate)] Error: setsid not found!" >>$log
 fi
 TR=$(which tr)
 if [ -z "$TR" ]; then
 	error=true
-    echo "[$(date +%d.%m@%H.%M.%S)] Error: tr not found!" >>$log
+    echo "[$(GetDate)] Error: tr not found!" >>$log
 fi
 AWK=$(which awk)
 if [ -z "$AWK" ]; then
 	error=true
-    echo "[$(date +%d.%m@%H.%M.%S)] Error: awk not found!" >>$log
+    echo "[$(GetDate)] Error: awk not found!" >>$log
 fi
 GREP=$(which grep)
 if [ -z "$GREP" ]; then
 	error=true
-    echo "[$(date +%d.%m@%H.%M.%S)] Error: grep not found!" >>$log
+    echo "[$(GetDate)] Error: grep not found!" >>$log
 fi
 CAT=$(which cat)
 if [ -z "$CAT" ]; then
 	error=true
-    echo "[$(date +%d.%m@%H.%M.%S)] Error: cat not found!" >>$log
+    echo "[$(GetDate)] Error: cat not found!" >>$log
 fi
 DF=$(which df)
 if [ -z "$DF" ]; then
 	error=true
-    echo "[$(date +%d.%m@%H.%M.%S)] Error: df not found!" >>$log
+    echo "[$(GetDate)] Error: df not found!" >>$log
 fi
 CHMOD=$(which chmod)
 if [ -z "$CHMOD" ]; then
 	error=true
-    echo "[$(date +%d.%m@%H.%M.%S)] Error: chmod not found!" >>$log
+    echo "[$(GetDate)] Error: chmod not found!" >>$log
 fi
 HEAD=$(which head)
 if [ -z "$HEAD" ]; then
 	error=true
-    echo "[$(date +%d.%m@%H.%M.%S)] Error: head not found!" >>$log
+    echo "[$(GetDate)] Error: head not found!" >>$log
 fi
 TAIL=$(which tail)
 if [ -z "$TAIL" ]; then
 	error=true
-    echo "[$(date +%d.%m@%H.%M.%S)] Error: tail not found!" >>$log
+    echo "[$(GetDate)] Error: tail not found!" >>$log
 fi
 ####################################################################################################################
 ############################# Argument parsing #####################################################################
@@ -212,8 +221,7 @@ fi
 
 usage()
 {
-echo <"
-
+echo "
 usage: $0 options
 
 This script will run a backup of any remote site with an ftp/sftp connection, and backup recursivly a directory
@@ -227,9 +235,9 @@ OPTIONS:
 	   -p --password=STRING     Password for the user
 	   -r --remote-host=ADDR    Server address
    	   -d --remote-dir=DIR  	Directory on the remote server to backup
-   	   
+
     Optional : 	   
-       -b --backup-dir=DIR		Local directory to move archived folder, if not specified it will be the current working directory
+	   -b --backup-dir=DIR		Local directory to move archived folder, if not specified it will be the current working directory
 	   -f --filename=FILE		Final filename for the backup filename.tar.bz2
 	   -s --secure          	Uses sftp instead of standard ftp
 	   --port=STRING 			Port number for FTP/SFTP connection
@@ -241,10 +249,19 @@ The remote path can be passed either relativly, or absolutly, just keep in mind 
 The remote host directory can act like a wild card /dir/*.zip, since it uses wget or scp.
 The filename of the local backup .tar.bz2 is by default backup-HOST-YYYY.m.d.HH.MM.SS
 
-This script will exit with 0 if everything was OK, 1 if an error was encountered, and 2 if an argument is not valid
+The script will log all it's actions to /var/log/$0, if the script cannot access the log it will try and create a file error-backup in the current working directory.
+
+This script will exit with 1 if everything was OK, 2 if an error was encountered, and 200 if an argument is not valid, or any other errors may report if the dependency scripts exit with another status, please refer to their documentation
 "
-exit 2; #exit with 1 since an argument was invalid
+exit 200; #exit with 2 since an argument was invalid
 }
+
+#just check the number of arguments
+
+if [ $# -eq 0 ]; then
+	echo "[$(GetDate)] Error: Invalid Arguments!" >>$log
+	usage
+fi
 #required arguments must be seperated by a ':'
 #Optional arguments must be at first and not seperated
 
@@ -310,6 +327,9 @@ while getopts hfbsu:p:r:-: arg; do
 			--no-zip)
 				nozip=true
 			;;
+			--pretend)
+				pretend=true
+			;;
 			--help)
 				usage
 			;;
@@ -325,57 +345,59 @@ while getopts hfbsu:p:r:-: arg; do
        OPTIND=1
        shift
 	;;
-    \? )   exit 2 ;;
+    \? )   exit 200 ;;
   esac
 done
 shift $((OPTIND-1))
 #check mandatory options
-if [ -z ${REMOTEHOST+x} ] && [ -z ${PASSWORD+x} ] && [ -z ${RDIRECTORY+x} ] && [ -z ${USER+x} ] ; then
+if [ -z ${REMOTEHOST} ] || [ -z ${PASSWORD} ] || [ -z ${RDIRECTORY} ] || [ -z ${USER} ] ; then
+	echo "[$(GetDate)] Error: mandatory arguments not supplied!" >>$log
     usage
 fi
 
 #####Re-assign some variables with arguments that were passed
 tmplog="list-$REMOTEHOST"
 if [ -z ${filename} ]; then
-	filename="backup-$REMOTEHOST-$(date +%Y%m%d%H%M%S)" #filename
+	filename="backup-$REMOTEHOST-$(GetDate)" #filename
 fi
 tmpdir="/tmp/$filename" #temporary olcation for files
-mkdir $tmpdir > /dev/null 2>&1
+mkdir --parents $tmpdir > /dev/null 2>&1
 
-if [[ ! -z ${cutdirs+x} ]]; then
+if [ ! -z ${cutdirs+x} ]; then
 	WGETOPTIONS="${WGETOPTIONS} --cut-dirs=$cutdirs"
 fi
-if [ ! -z ${SECURE} ] && [ -z ${port} ] ; then
+if [ ${SECURE} ] && [ -z ${port} ] ; then
 	port="22"
 elif [ -z ${port} ]; then
 	port="21"
 fi
 
+
 #http://www.dslreports.com/forum/r23739041-Bash-Script-path-correcting
-LEN=${#BACKUPDIR}-1
- 
-if [ "${BACKUPDIR:LEN}" != "/" ]; then
+#echo $BACKUPDIR
+
+if [ "$(echo -n $BACKUPDIR | tail -c 1)" != "/" ]; then
   BACKUPDIR=$BACKUPDIR"/"
 fi
 #create the backup directory if it doesnt exist
 if [ ! -e $BACKUPDIR ]; then
-    mkdir $BACKUPDIR > /dev/null 2>&1
+    mkdir --parents $BACKUPDIR #> /dev/null 2>&1
 fi
 ####################################################################################################################
 ############################# Check for errors before continuaing ##################################################
 ####################################################################################################################
 if [ ${error} ] ; then
-	echo "[$(date +%Y%m%d%H%M%S)] Error occured : exiting...." >>$log && exit 1;
+	echo "[$(GetDate)] Error occured : exiting...." >>$log && exit 2;
 fi
 IFS=","
 #$(echo $RDIRECTORY | sed -e 's/, /, /g')
 for DIRECTORY in $RDIRECTORY; do
-	echo "[$(date +%Y%m%d%H%M%S)] Info:  Retrieving $DIRECTORY">>$log
+	echo "[$(GetDate)] Info:  Retrieving $DIRECTORY">>$log
 
 	####################################################################################################################
 	############################# Check remote site size ###############################################################
 	####################################################################################################################
-	echo "[$(date +%Y%m%d%H%M%S)] Info: calculating remote folder size">>$log
+	echo "[$(GetDate)] Info: calculating remote folder size">>$log
 	if [ ! ${SECURE} ]; then
 	#List all files in remote directory recursively to a temporary file
 			$FTP -n $REMOTEHOST $port << END_SCRIPT > ${tmplog} 2>&1
@@ -390,8 +412,8 @@ END_SCRIPT
 
 
 		if [[ $? != 0 ]] ; then
-			echo "[$(date +%Y%m%d%H%M%S)] Error:  Failed to connect via FTP, exited with error code : $?">>$log
-			exit 1;
+			echo "[$(GetDate)] Error:  Failed to connect via FTP, exited with error code : $?">>$log
+			exit 2;
 		fi
 
 		#Get remote directory size * 1.6
@@ -426,8 +448,8 @@ EOL
 		# certificates.
 		$SETSID $SSH -oLogLevel=error -oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null -p ${port} ${USER}@${REMOTEHOST} "ls -lR $DIRECTORY" >> $tmplog
 		if [[ $? != 0 ]] ; then
-			echo "[$(date +%Y%m%d%H%M%S)] Error:  Failed to connect via FTP, exited with error code : $?">>$log
-			exit 1;
+			echo "[$(GetDate)] Error:  Failed to connect via FTP, exited with error code : $?">>$log
+			exit 2;
 		fi
 
 		#Get remote directory size * 1.6
@@ -439,13 +461,13 @@ EOL
 	fi
 
 	if [[ ! -f $tmpsize ]]; then
-		echo "[$(date +%Y%m%d%H%M%S)] Error: temporary file for directory size wasn't created, cannot continue">>$log
-		exit 1;
+		echo "[$(GetDate)] Error: temporary file for directory size wasn't created, cannot continue">>$log
+		exit 2;
 	fi
 
 	#Get local filestystem available bytes
 	# http://stackoverflow.com/questions/19703621/get-free-disk-space-with-df-to-just-display-free-space-in-kb
-	echo "[$(date +%Y%m%d%H%M%S)] Info: calculating local folder size">>$log
+	echo "[$(GetDate)] Info: calculating local folder size">>$log
 	$DF -k $BACKUPDIR | \
 	$GREP -v 'Use%' |\
 	$TR -d '\n' |\
@@ -457,14 +479,14 @@ EOL
 	LOCALSIZE=$($TAIL -n 1 $tmpsize | $AWK '{printf "%.0f",$1}')
 
 	if [ $REMOTESIZE -gt $LOCALSIZE ]; then
-		echo "[$(date +%Y%m%d%H%M%S)] Error: size available on local disk is insufficient, exited with error code : $?">>$log
-		exit 1;
+		echo "[$(GetDate)] Error: size available on local disk is insufficient, exited with error code : $?">>$log
+		exit 2;
 	fi
 
 	####################################################################################################################
 	############################# Download files by ftp or sftp ########################################################
 	####################################################################################################################
-	echo "[$(date +%Y%m%d%H%M%S)] Info: started downloading files">>$log
+	echo "[$(GetDate)] Info: started downloading files">>$log
 	if [ ! -z ${SECURE} ]; then
 		#----------------------------------------------------------------------
 		# Create a temp script to echo the SSH password, used by SSH_ASKPASS
@@ -487,18 +509,35 @@ EOL
 		# LogLevel error is to suppress the hosts warning. The others are
 		# necessary if working with development servers with self-signed
 		# certificates.
-		c="$SCP -oLogLevel=error -r -C -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no -P ${port} -pv $USER@$REMOTEHOST:$DIRECTORY $tmpdir"
-		echo "[$(date +%Y%m%d%H%M%S)] Info: downloading command = $c">>$log
-		$SETSID $SCP -oLogLevel=error -r -C -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no -P ${port} -pv $USER@$REMOTEHOST:$DIRECTORY $tmpdir >> $log 2>&1
+		
+		
+		if [ ! -z {pretend+x} ]; then
+			c="$SCP -oLogLevel=error -r -C -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no -P ${port} -pv $USER@$REMOTEHOST:$DIRECTORY $tmpdir"
+			echo "[$(GetDate)] Info: downloading command = $c">>$log
+			
+			#check exit code of wget
+			#echo $?
+			if [[ $($SETSID $SCP -oLogLevel=error -r -C -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no -P ${port} -p $USER@$REMOTEHOST:$DIRECTORY $tmpdir >> $log 2>&1) != 0 ]]; then
+				echo "[$(GetDate)] Error:  Failed to download exited with code : $?">>$log
+				exit 2;
+			fi
+		fi
+		
 	else
-		echo "[$(date +%Y%m%d%H%M%S)] Info: downloading command = $WGET -vr -nc -nH -x -np -P $tmpdir --cut-dirs=$cutdirs ftp://$USER:$PASSWORD@$REMOTEHOST/$DIRECTORY">>$log
-		$WGET -vr -nc -nH -x -np -P $tmpdir --cut-dirs=$cutdirs ftp://$USER:$PASSWORD@$REMOTEHOST/$DIRECTORY >> $log 2>&1
+		
+		if [ ! -z {pretend+x} ]; then
+			echo "[$(GetDate)] Info: downloading command = $WGET -vr -nc -nH -x -np -P $tmpdir --cut-dirs=$cutdirs ftp://$USER:$PASSWORD@$REMOTEHOST/$DIRECTORY">>$log
+			
+			#check exit code of wget
+			r=$($WGET -r -nv -nc -nH -x -np -P $tmpdir --cut-dirs=$cutdirs ftp://$USER:$PASSWORD@$REMOTEHOST/$DIRECTORY >> $log 2>&1)
+			
+			if [[ $? != 0 ]]; then
+				echo "[$(GetDate)] Error:  Failed to download exited with code : $?">>$log
+				exit 2;
+			fi
+		fi
 	fi
-	#check exit code of wget
-	if [[ $? != 0 ]]; then
-		echo "[$(date +%Y%m%d%H%M%S)] Error:  Failed to download exited with code : $?">>$log
-		exit 1;
-	fi
+	
 
 done
 ####################################################################################################################
@@ -509,16 +548,16 @@ if [ ! -z ${nozip} ]; then
 	$MV -vfn $tmpdir $BACKUPDIR
 else
 	#archiving
-	echo "[$(date +%Y%m%d%H%M%S)] Info: started archiving">>$log
+	echo "[$(GetDate)] Info: started archiving">>$log
 	$TAR -vcf $BACKUPDIR$filename.tar $tmpdir >> $log 2>&1
 	$BZIP -9v $BACKUPDIR$filename.tar >> $log 2>&1
 	#check exit code of tar
 	if [[ $? != 0 ]]; then
-		echo "[$(date +%Y%m%d%H%M%S)] Error: Failed to compress exited with code : $?">>$log
-		exit 1;
+		echo "[$(GetDate)] Error: Failed to compress exited with code : $?">>$log
+		exit 2;
 	fi
 fi
 
 ####################################################################################################################
-echo "[$(date +%Y%m%d%H%M%S)] Info: finishing and cleaning up.....">>$log
-exit 0;
+echo "[$(GetDate)] Info: finishing and cleaning up.....">>$log
+exit 1;
